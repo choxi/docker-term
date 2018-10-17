@@ -1,8 +1,10 @@
 package main
 
 import (
+	"Dre/utils"
 	"encoding/base64"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kr/pty"
+	"github.com/satori/go.uuid"
 )
 
 var addrFlag, cmdFlag, staticFlag string
@@ -28,10 +31,9 @@ type wsPty struct {
 	Pty *os.File  // a pty is simply an os.File
 }
 
-func (wp *wsPty) Start() {
+func (wp *wsPty) Start(cmd string, args ...string) {
 	var err error
-	args := flag.Args()
-	wp.Cmd = exec.Command(cmdFlag, args...)
+	wp.Cmd = exec.Command(cmd, args...)
 	wp.Pty, err = pty.Start(wp.Cmd)
 	if err != nil {
 		log.Fatalf("Failed to start command: %s\n", err)
@@ -44,15 +46,43 @@ func (wp *wsPty) Stop() {
 }
 
 func ptyHandler(w http.ResponseWriter, r *http.Request) {
+	var (
+		stdout string
+		stderr string
+		err    error
+	)
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Fatalf("Websocket upgrade failed: %s\n", err)
 	}
 	defer conn.Close()
 
+	sourceURL := utils.Decode64(r.URL.Query()["source_url"][0])
+	imageID, _ := uuid.NewV4()
+	downloadPath := "./tmp/containers/1/"
+	repoPath := downloadPath + "repo"
+	tarTarget := "tar_repo.tgz"
+	os.MkdirAll(repoPath, os.ModePerm)
+
+	if err = utils.DownloadFile(downloadPath+tarTarget, sourceURL); err != nil {
+		panic(err)
+	}
+
+	if _, _, err = utils.ExecDir(downloadPath, "tar", "-C", "./repo", "-xzf", "tar_repo.tgz", "--strip-components=1"); err != nil {
+		panic(err)
+	}
+
+	if stdout, stderr, err = utils.ExecDir(repoPath, "docker", "build", "-t", imageID.String(), "."); err != nil {
+		panic(err)
+	}
+
+	fmt.Println(stdout)
+	fmt.Println(stderr)
+
 	wp := wsPty{}
 	// TODO: check for errors, return 500 on fail
-	wp.Start()
+	wp.Start("docker", "run", "-it", imageID.String(), "/bin/bash")
 
 	// copy everything from the pty master to the websocket
 	// using base64 encoding for now due to limitations in term.js
@@ -98,6 +128,7 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("base64 decoding of payload failed: %s\n", err)
 			}
+
 			wp.Pty.Write(buf)
 		default:
 			log.Printf("Invalid message type %d\n", mt)

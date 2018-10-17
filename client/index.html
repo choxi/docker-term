@@ -1,7 +1,8 @@
 <html>
     <body>
         <script>
-            window.pty = new WebSocket("ws://localhost:9000/pty")
+            sourceURL = btoa("https://s3-us-west-1.amazonaws.com/choxi-general/workshop-html-css.tgz")
+            window.pty = new WebSocket(`ws://localhost:9000/pty?source_url=${sourceURL}`)
             pty.onopen = function() { console.log("opened") }
             pty.onclose = function() { console.log("closed") }
             pty.onmessage = function(message) { 
