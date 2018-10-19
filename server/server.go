@@ -7,7 +7,9 @@ import (
 	"Dre/ws"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 )
 
 // Server is a http server
@@ -50,25 +52,52 @@ func (s *Server) Start(port string) error {
 	return nil
 }
 
+type parameters struct {
+	sourceURL   string
+	containerID string
+}
+
 func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		err       error
 		pty       docker.Pty
 		container docker.Container
 		webSocket ws.WS
-		sourceURL string
+		params    parameters
 	)
 
 	webSocket = ws.FromContext(r.Context())
-	sourceURL = utils.Decode64(r.URL.Query()["source_url"][0])
-	container = docker.CreateContainer(sourceURL)
+	params = parseParams(r.URL.Query())
+
+	if container, err = docker.CreateContainer(params.sourceURL); err != nil {
+		log.Fatalln(err)
+		return
+	}
 	defer container.Stop()
 
 	if pty, err = container.Bash(); err != nil {
+		log.Fatalln(err)
 		return
 	}
 	defer pty.Stop()
 
 	adapter := streams.NewAdapter(&pty, &webSocket)
 	err = adapter.Connect()
+}
+
+func parseParams(values url.Values) parameters {
+	var params parameters
+
+	sourceURLKey := "source_url"
+	containerIDKey := "container_id"
+
+	if len(values[sourceURLKey]) > 0 {
+		params.sourceURL = utils.Decode64(values[sourceURLKey][0])
+	}
+
+	if len(values[containerIDKey]) > 0 {
+		params.containerID = values["container_id"][0]
+	}
+
+	return params
 }

@@ -11,45 +11,42 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+// Container is a Docker container
 type Container struct {
 	imageID uuid.UUID
 	pty     *Pty
 }
 
+// Pty is a pty connection to a command
 type Pty struct {
 	Cmd  *exec.Cmd // pty builds on os.exec
 	Conn *os.File  // a pty is simply an os.File
 }
 
-func CreateContainer(sourceURL string) Container {
-	var (
-		stdout string
-		stderr string
-		err    error
-	)
+// CreateContainer takes a source URL for a repo with a Dockerfile,
+// builds an image for it, and returns a Container for that image.
+func CreateContainer(sourceURL string) (Container, error) {
+	var err error
 
 	imageID, _ := uuid.NewV4()
-	downloadPath := "./tmp/containers/1/"
+	downloadPath := fmt.Sprintf("./tmp/containers/%s/", imageID.String())
 	repoPath := downloadPath + "repo"
-	tarTarget := "tar_repo.tgz"
+	tarTarget := "repo.tgz"
 	os.MkdirAll(repoPath, os.ModePerm)
 
 	if err = utils.DownloadFile(downloadPath+tarTarget, sourceURL); err != nil {
-		panic(err)
+		return Container{}, err
 	}
 
 	if _, _, err = utils.ExecDir(downloadPath, "tar", "-C", "./repo", "-xzf", "tar_repo.tgz", "--strip-components=1"); err != nil {
-		panic(err)
+		return Container{}, err
 	}
 
-	if stdout, stderr, err = utils.ExecDir(repoPath, "docker", "build", "-t", imageID.String(), "."); err != nil {
-		panic(err)
+	if _, _, err = utils.ExecDir(repoPath, "docker", "build", "-t", imageID.String(), "."); err != nil {
+		return Container{}, err
 	}
 
-	fmt.Println(stdout)
-	fmt.Println(stderr)
-
-	return Container{imageID, nil}
+	return Container{imageID, nil}, nil
 }
 
 // Bash runs /bin/bash in the container and returns a pty connection
@@ -65,9 +62,7 @@ func (c *Container) Run(command string) (Pty, error) {
 	)
 
 	pty.Cmd = exec.Command("docker", "run", "-it", c.imageID.String(), command)
-	pty.Conn, err = pseudoterm.Start(pty.Cmd)
-
-	if err != nil {
+	if pty.Conn, err = pseudoterm.Start(pty.Cmd); err != nil {
 		return Pty{}, err
 	}
 
