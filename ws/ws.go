@@ -28,12 +28,12 @@ type WS struct {
 	connection *websocket.Conn
 }
 
-func (ws *WS) WriteMessage(buf []byte) error {
+func (ws *WS) Write(buf []byte) error {
 	return ws.connection.WriteMessage(websocket.TextMessage, buf)
 }
 
 // ReadMessage returns the next bytes written to the connection
-func (ws *WS) ReadMessage() ([]byte, error) {
+func (ws *WS) Read() ([]byte, error) {
 	mt, payload, err := ws.connection.ReadMessage()
 
 	if err != nil {
@@ -73,6 +73,6 @@ func Middleware(next http.Handler) http.Handler {
 }
 
 // GetWS takes a context and returns its WS connection
-func GetWS(ctx context.Context) WS {
+func FromContext(ctx context.Context) WS {
 	return ctx.Value(wsKey).(WS)
 }

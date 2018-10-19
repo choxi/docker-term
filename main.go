@@ -2,6 +2,7 @@ package main
 
 import (
 	"Dre/docker"
+	"Dre/streams"
 	"Dre/utils"
 	"Dre/ws"
 	"flag"
@@ -14,57 +15,26 @@ var addrFlag, cmdFlag, staticFlag string
 
 func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	var (
-		err error
-		pty docker.Pty
+		err       error
+		pty       docker.Pty
+		container docker.Container
+		webSocket ws.WS
+		sourceURL string
 	)
 
-	webSocket := ws.GetWS(r.Context())
-	sourceURL := utils.Decode64(r.URL.Query()["source_url"][0])
-	container := docker.CreateContainer(sourceURL)
-	pty, err = container.Bash()
+	webSocket = ws.FromContext(r.Context())
+	sourceURL = utils.Decode64(r.URL.Query()["source_url"][0])
+	container = docker.CreateContainer(sourceURL)
+	defer container.Stop()
 
-	if err != nil {
+	if pty, err = container.Bash(); err != nil {
 		return
 	}
+	defer pty.Stop()
 
-	// TODO: check for errors, return 500 on fail
-
-	// copy everything from the pty master to the websocket
-	// using base64 encoding for now due to limitations in term.js
-	go func() {
-		// TODO: more graceful exit on socket close / process exit
-		for {
-			var out []byte
-
-			if out, err = pty.Read(); err != nil {
-				return
-			}
-
-			if err = webSocket.WriteMessage(out); err != nil {
-				return
-			}
-		}
-	}()
-
-	// read from the web socket, copying to the pty master
-	// messages are expected to be text and base64 encoded
-	for {
-		var (
-			err error
-			buf []byte
-		)
-
-		if buf, err = webSocket.ReadMessage(); err != nil {
-			return
-		}
-
-		if err = pty.Write(buf); err != nil {
-			return
-		}
-	}
-
-	pty.Stop()
-	container.Stop()
+	adapter := streams.NewAdapter(&pty, &webSocket)
+	err = adapter.Connect()
+	log.Fatalf("Adapter disconnected: %s\n", err)
 }
 
 func init() {
