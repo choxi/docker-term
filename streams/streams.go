@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 )
 
 // Stream is an interface that reads and writes
@@ -14,13 +15,13 @@ type Stream interface {
 
 // StreamAdapter connects a pty to a webSocket
 type StreamAdapter struct {
+	source  Stream
 	streams []Stream
 }
 
 // NewAdapter takes streams and returns a StreamAdapter
-func NewAdapter(stms ...Stream) StreamAdapter {
-	adapter := StreamAdapter{}
-	adapter.streams = stms
+func NewAdapter(source Stream, stms ...Stream) StreamAdapter {
+	adapter := StreamAdapter{source, stms}
 	return adapter
 }
 
@@ -51,22 +52,37 @@ func (a *StreamAdapter) Connect() error {
 	// using base64 encoding for now due to limitations in term.js
 
 	size := len(a.streams)
-	if size != 2 {
+	if size < 1 {
 		message := fmt.Sprintf("StreamAdapter requires exactly two streams, has %v.", size)
 		return errors.New(message)
 	}
 
-	streamA := a.streams[0]
-	streamB := a.streams[1]
+	if a.source == nil {
+		return errors.New("StreamAdapter requires a source stream")
+	}
 
-	go func() {
-		err := pipeStreams(streamA, streamB)
-		log.Println(err)
-	}()
-	// read from the web socket, copying to the pty master
-	// messages are expected to be text and base64 encoded
+	var wg sync.WaitGroup
 
-	err := pipeStreams(streamB, streamA)
-	log.Println(err)
+	for _, stream := range a.streams {
+		wg.Add(1)
+		go func(stream Stream) {
+			err := pipeStreams(a.source, stream)
+			log.Println(err)
+			wg.Done()
+		}(stream)
+
+		wg.Add(1)
+		go func(stream Stream) {
+			wg.Add(1)
+			err := pipeStreams(stream, a.source)
+			log.Println(err)
+			wg.Done()
+		}(stream)
+	}
+
+	wg.Wait()
+
+	log.Fatalf("Adapter disconnected")
+
 	return nil
 }

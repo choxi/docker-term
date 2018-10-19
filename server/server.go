@@ -7,7 +7,6 @@ import (
 	"Dre/ws"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -72,5 +71,4 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 
 	adapter := streams.NewAdapter(&pty, &webSocket)
 	err = adapter.Connect()
-	log.Fatalf("Adapter disconnected: %s\n", err)
 }
