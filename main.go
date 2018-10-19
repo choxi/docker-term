@@ -2,29 +2,20 @@ package main
 
 import (
 	"Dre/utils"
+	"Dre/ws"
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 
-	"github.com/gorilla/websocket"
 	"github.com/kr/pty"
 	"github.com/satori/go.uuid"
 )
 
 var addrFlag, cmdFlag, staticFlag string
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1,
-	WriteBufferSize: 1,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 type wsPty struct {
 	Cmd *exec.Cmd // pty builds on os.exec
@@ -52,11 +43,7 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 		err    error
 	)
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Fatalf("Websocket upgrade failed: %s\n", err)
-	}
-	defer conn.Close()
+	webSocket := ws.GetWS(r.Context())
 
 	sourceURL := utils.Decode64(r.URL.Query()["source_url"][0])
 	imageID, _ := uuid.NewV4()
@@ -99,7 +86,7 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 			out := make([]byte, base64.StdEncoding.EncodedLen(n))
 			base64.StdEncoding.Encode(out, buf[0:n])
 
-			err = conn.WriteMessage(websocket.TextMessage, out)
+			err = webSocket.WriteMessage(out)
 
 			if err != nil {
 				log.Printf("Failed to send %d bytes on websocket: %s", n, err)
@@ -111,29 +98,16 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	// read from the web socket, copying to the pty master
 	// messages are expected to be text and base64 encoded
 	for {
-		mt, payload, err := conn.ReadMessage()
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("conn.ReadMessage failed: %s\n", err)
-				return
-			}
-		}
+		var (
+			err error
+			buf []byte
+		)
 
-		switch mt {
-		case websocket.BinaryMessage:
-			log.Printf("Ignoring binary message: %q\n", payload)
-		case websocket.TextMessage:
-			buf := make([]byte, base64.StdEncoding.DecodedLen(len(payload)))
-			_, err := base64.StdEncoding.Decode(buf, payload)
-			if err != nil {
-				log.Printf("base64 decoding of payload failed: %s\n", err)
-			}
-
-			wp.Pty.Write(buf)
-		default:
-			log.Printf("Invalid message type %d\n", mt)
+		if buf, err = webSocket.ReadMessage(); err != nil {
 			return
 		}
+
+		wp.Pty.Write(buf)
 	}
 
 	wp.Stop()
@@ -150,7 +124,8 @@ func init() {
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/pty", ptyHandler)
+	finalHandler := http.HandlerFunc(ptyHandler)
+	http.Handle("/pty", ws.Middleware(finalHandler))
 
 	// serve html & javascript
 	http.Handle("/", http.FileServer(http.Dir(staticFlag)))
