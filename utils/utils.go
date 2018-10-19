@@ -39,9 +39,6 @@ func ExecDir(dir string, command string, args ...string) (string, string, error)
 }
 
 func DownloadFile(filepath string, url string) error {
-	fmt.Println("filepath: (" + filepath + ")")
-	fmt.Println("url: (" + url + ")")
-
 	// Create the file
 	out, err := os.Create(filepath)
 	if err != nil {
@@ -67,6 +64,5 @@ func DownloadFile(filepath string, url string) error {
 		return err
 	}
 
-	fmt.Println("HERE")
 	return nil
 }
