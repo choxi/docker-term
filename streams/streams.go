@@ -17,6 +17,7 @@ type StreamAdapter struct {
 	streams []Stream
 }
 
+// NewAdapter takes streams and returns a StreamAdapter
 func NewAdapter(stms ...Stream) StreamAdapter {
 	adapter := StreamAdapter{}
 	adapter.streams = stms

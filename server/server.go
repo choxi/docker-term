@@ -11,6 +11,7 @@ import (
 	"net/http"
 )
 
+// Server is a http server
 type Server struct {
 	handlers []*handle
 }
@@ -20,6 +21,20 @@ type handle struct {
 	handler http.Handler
 }
 
+// New returns a new Server with initialized handlers
+func New(staticDir string) Server {
+	server := Server{}
+
+	finalHandler := http.HandlerFunc(ptyHandler)
+	ptyHandler := handle{"/pty", ws.Middleware(finalHandler)}
+	staticHandler := handle{"/", http.FileServer(http.Dir(staticDir))}
+
+	server.handlers = []*handle{&ptyHandler, &staticHandler}
+
+	return server
+}
+
+// Start runs the server and listens on the provided port
 func (s *Server) Start(port string) error {
 	for _, handle := range s.handlers {
 		http.Handle(handle.path, handle.handler)
@@ -58,18 +73,4 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	adapter := streams.NewAdapter(&pty, &webSocket)
 	err = adapter.Connect()
 	log.Fatalf("Adapter disconnected: %s\n", err)
-}
-
-func New(staticDir string) Server {
-	server := Server{}
-
-	finalHandler := http.HandlerFunc(ptyHandler)
-	ptyHandler := handle{"/pty", ws.Middleware(finalHandler)}
-	staticHandler := handle{"/", http.FileServer(http.Dir(staticDir))}
-
-	server.handlers = []*handle{&ptyHandler, &staticHandler}
-
-	// serve html & javascript
-
-	return server
 }
