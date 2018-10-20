@@ -5,6 +5,7 @@ import (
 	"Dre/streams"
 	"Dre/utils"
 	"Dre/ws"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -14,32 +15,22 @@ import (
 
 // Server is a http server
 type Server struct {
-	handlers []*handle
-}
-
-type handle struct {
-	path    string
-	handler http.Handler
 }
 
 // New returns a new Server with initialized handlers
-func New(staticDir string) Server {
+func New() Server {
 	server := Server{}
-
-	finalHandler := http.HandlerFunc(ptyHandler)
-	ptyHandler := handle{"/pty", ws.Middleware(finalHandler)}
-	staticHandler := handle{"/", http.FileServer(http.Dir(staticDir))}
-
-	server.handlers = []*handle{&ptyHandler, &staticHandler}
 
 	return server
 }
 
 // Start runs the server and listens on the provided port
-func (s *Server) Start(port string) error {
-	for _, handle := range s.handlers {
-		http.Handle(handle.path, handle.handler)
-	}
+func (s *Server) Start(staticDir string, port string) error {
+	finalHandler := http.HandlerFunc(ptyHandler)
+
+	http.Handle("/v1/pty", ws.Middleware(finalHandler))
+	http.HandleFunc("/v1/containers", containersHandler)
+	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 
 	addr := "localhost:" + port
 	err := http.ListenAndServe(addr, nil)
@@ -103,6 +94,11 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Connecting to ContainerID: " + container.ID.String())
 
 	err = newAdapter.Connect()
+}
+
+func containersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"KEY": "VALUE"})
 }
 
 func parseParams(values url.Values) parameters {

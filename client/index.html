@@ -7,7 +7,7 @@
         <script>
             document.addEventListener("DOMContentLoaded", function() {
                 sourceURL = btoa("https://s3-us-west-1.amazonaws.com/choxi-general/workshop-html-css.tgz")
-                window.pty = new WebSocket(`ws://localhost:3000/pty?source_url=${sourceURL}`)
+                window.pty = new WebSocket(`ws://localhost:3000/v1/pty?source_url=${sourceURL}`)
                 window.send = function(command) {
                     pty.send(btoa(command))
                 }

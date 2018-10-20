@@ -7,6 +7,6 @@ import (
 
 func main() {
 	dir, _ := os.Getwd()
-	server := server.New(dir)
-	server.Start("3000")
+	server := server.New()
+	server.Start(dir, "3000")
 }
