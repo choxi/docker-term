@@ -1,6 +1,7 @@
 package server
 
 import (
+	"Dre/db"
 	"Dre/docker"
 	"Dre/streams"
 	"Dre/utils"
@@ -44,8 +45,8 @@ func (s *Server) Start(staticDir string, port string) error {
 }
 
 type parameters struct {
-	sourceURL   string
-	containerID string
+	SourceURL   string `json:"source_url"`
+	ContainerID string `json:"container_id"`
 }
 
 var containerPool = make(map[string]*streams.Adapter)
@@ -62,20 +63,20 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 
 	webSocket = ws.FromContext(r.Context())
 	params = parseParams(r.URL.Query())
-	adapter = containerPool[params.containerID]
+	adapter = containerPool[params.ContainerID]
 
-	if params.containerID != "" && adapter == nil {
-		fmt.Println("Container not found: " + params.containerID)
+	if params.ContainerID != "" && adapter == nil {
+		fmt.Println("Container not found: " + params.ContainerID)
 		return
 	}
 
-	if params.containerID != "" && adapter != nil {
-		fmt.Println("Connecting to ContainerID: " + params.containerID)
+	if params.ContainerID != "" && adapter != nil {
+		fmt.Println("Connecting to ContainerID: " + params.ContainerID)
 		adapter.AddStream(&webSocket)
 		return
 	}
 
-	if container, err = docker.CreateContainer(params.sourceURL); err != nil {
+	if container, err = docker.CreateContainer(params.SourceURL); err != nil {
 		log.Fatalln(err)
 		return
 	}
@@ -97,8 +98,44 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func containersHandler(w http.ResponseWriter, r *http.Request) {
+	var (
+		params    parameters
+		database  db.DB
+		err       error
+		image     db.Image
+		container db.Container
+	)
+
+	if params, err = parseJSON(r); err != nil {
+		fmt.Println(err)
+	}
+
+	database = db.Connect()
+
+	if image, err = database.CreateImage(params.SourceURL); err != nil {
+		fmt.Println(err)
+	}
+
+	if container, err = database.CreateContainer(&image); err != nil {
+		fmt.Println(err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"KEY": "VALUE"})
+	json.NewEncoder(w).Encode(container)
+}
+
+func parseJSON(r *http.Request) (parameters, error) {
+	var (
+		params parameters
+		err    error
+	)
+
+	decoder := json.NewDecoder(r.Body)
+	if err = decoder.Decode(&params); err != nil {
+		return params, err
+	}
+
+	return params, nil
 }
 
 func parseParams(values url.Values) parameters {
@@ -108,11 +145,11 @@ func parseParams(values url.Values) parameters {
 	containerIDKey := "container_id"
 
 	if len(values[sourceURLKey]) > 0 {
-		params.sourceURL = utils.Decode64(values[sourceURLKey][0])
+		params.SourceURL = utils.Decode64(values[sourceURLKey][0])
 	}
 
 	if len(values[containerIDKey]) > 0 {
-		params.containerID = values["container_id"][0]
+		params.ContainerID = values["container_id"][0]
 	}
 
 	return params
