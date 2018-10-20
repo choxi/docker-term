@@ -4,6 +4,7 @@ import (
 	"Dre/utils"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -13,6 +14,7 @@ import (
 
 // Container is a Docker container
 type Container struct {
+	ID      uuid.UUID
 	imageID uuid.UUID
 	pty     *Pty
 }
@@ -29,24 +31,29 @@ func CreateContainer(sourceURL string) (Container, error) {
 	var err error
 
 	imageID, _ := uuid.NewV4()
+	containerID, _ := uuid.NewV4()
+
 	downloadPath := fmt.Sprintf("./tmp/containers/%s/", imageID.String())
 	repoPath := downloadPath + "repo"
-	tarTarget := "repo.tgz"
+	tarTarget := "tar_repo.tgz"
 	os.MkdirAll(repoPath, os.ModePerm)
 
+	log.Println("Downloading repo...")
 	if err = utils.DownloadFile(downloadPath+tarTarget, sourceURL); err != nil {
 		return Container{}, err
 	}
 
-	if _, _, err = utils.ExecDir(downloadPath, "tar", "-C", "./repo", "-xzf", "tar_repo.tgz", "--strip-components=1"); err != nil {
+	log.Println("Unarchiving repo...")
+	if _, _, err = utils.ExecDir(downloadPath, "tar", "-C", "./repo", "-xzf", tarTarget, "--strip-components=1"); err != nil {
 		return Container{}, err
 	}
 
+	log.Println("Building image...")
 	if _, _, err = utils.ExecDir(repoPath, "docker", "build", "-t", imageID.String(), "."); err != nil {
 		return Container{}, err
 	}
 
-	return Container{imageID, nil}, nil
+	return Container{containerID, imageID, nil}, nil
 }
 
 // Bash runs /bin/bash in the container and returns a pty connection

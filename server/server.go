@@ -57,6 +57,8 @@ type parameters struct {
 	containerID string
 }
 
+var containerPool = make(map[string]*streams.Adapter)
+
 func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		err       error
@@ -64,15 +66,29 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 		container docker.Container
 		webSocket ws.WS
 		params    parameters
+		adapter   *streams.Adapter
 	)
 
 	webSocket = ws.FromContext(r.Context())
 	params = parseParams(r.URL.Query())
+	adapter = containerPool[params.containerID]
+
+	if params.containerID != "" && adapter == nil {
+		fmt.Println("Container not found: " + params.containerID)
+		return
+	}
+
+	if params.containerID != "" && adapter != nil {
+		fmt.Println("Connecting to ContainerID: " + params.containerID)
+		adapter.AddStream(&webSocket)
+		return
+	}
 
 	if container, err = docker.CreateContainer(params.sourceURL); err != nil {
 		log.Fatalln(err)
 		return
 	}
+
 	defer container.Stop()
 
 	if pty, err = container.Bash(); err != nil {
@@ -81,8 +97,12 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pty.Stop()
 
-	adapter := streams.NewAdapter(&pty, &webSocket)
-	err = adapter.Connect()
+	newAdapter := streams.NewAdapter(&pty, &webSocket)
+	containerPool[container.ID.String()] = &newAdapter
+
+	fmt.Println("Connecting to ContainerID: " + container.ID.String())
+
+	err = newAdapter.Connect()
 }
 
 func parseParams(values url.Values) parameters {

@@ -13,15 +13,22 @@ type Stream interface {
 	Write(buf []byte) error
 }
 
-// StreamAdapter connects a pty to a webSocket
-type StreamAdapter struct {
-	source  Stream
-	streams []Stream
+// Mux takes a writer stream and connects its outputs to multiple readers
+type Mux struct {
+	writer  Stream
+	readers []Stream
 }
 
-// NewAdapter takes streams and returns a StreamAdapter
-func NewAdapter(source Stream, stms ...Stream) StreamAdapter {
-	adapter := StreamAdapter{source, stms}
+// Adapter connects a pty to a webSocket
+type Adapter struct {
+	source  Stream
+	streams []Stream
+	mux     *Mux
+}
+
+// NewAdapter takes streams and returns a Adapter
+func NewAdapter(source Stream, stms ...Stream) Adapter {
+	adapter := Adapter{source, stms, nil}
 	return adapter
 }
 
@@ -43,9 +50,28 @@ func pipeStreams(writer Stream, reader Stream) error {
 	}
 }
 
+func (m *Mux) Connect() error {
+	var (
+		buf []byte
+		err error
+	)
+
+	for {
+		if buf, err = m.writer.Read(); err != nil {
+			return err
+		}
+
+		for _, reader := range m.readers {
+			if err = reader.Write(buf); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 // Connect takes the adapters streams and connects their reads and writes
 // It currently only supports two streams
-func (a *StreamAdapter) Connect() error {
+func (a *Adapter) Connect() error {
 	// TODO: check for errors, return 500 on fail
 
 	// copy everything from the pty master to the websocket
@@ -53,31 +79,28 @@ func (a *StreamAdapter) Connect() error {
 
 	size := len(a.streams)
 	if size < 1 {
-		message := fmt.Sprintf("StreamAdapter requires exactly two streams, has %v.", size)
+		message := fmt.Sprintf("Adapter requires exactly two streams, has %v.", size)
 		return errors.New(message)
 	}
 
 	if a.source == nil {
-		return errors.New("StreamAdapter requires a source stream")
+		return errors.New("Adapter requires a source stream")
 	}
 
 	var wg sync.WaitGroup
 
-	for _, stream := range a.streams {
-		wg.Add(1)
-		go func(stream Stream) {
-			err := pipeStreams(a.source, stream)
-			log.Println(err)
-			wg.Done()
-		}(stream)
+	a.mux = &Mux{}
+	a.mux.writer = a.source
+	a.mux.readers = a.streams
+	go a.mux.Connect()
 
+	for _, str := range a.streams {
 		wg.Add(1)
-		go func(stream Stream) {
-			wg.Add(1)
-			err := pipeStreams(stream, a.source)
+		go func(s Stream) {
+			err := pipeStreams(s, a.source)
 			log.Println(err)
 			wg.Done()
-		}(stream)
+		}(str)
 	}
 
 	wg.Wait()
@@ -85,4 +108,11 @@ func (a *StreamAdapter) Connect() error {
 	log.Fatalf("Adapter disconnected")
 
 	return nil
+}
+
+// AddStream adds a stream to the adapter and connects it to the source
+func (a *Adapter) AddStream(str Stream) {
+	a.mux.readers = append(a.mux.readers, str)
+	err := pipeStreams(str, a.source)
+	log.Println(err)
 }
