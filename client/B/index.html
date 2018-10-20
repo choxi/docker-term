@@ -1,13 +1,13 @@
 <html>
     <body>
-        <div id=#bash"></div>
+        <div id="bash"></div>
 
-        <script src="./public/term.js" type="text/javascript"></script>
+        <script src="../public/term.js" type="text/javascript"></script>
 
         <script>
             document.addEventListener("DOMContentLoaded", function() {
-                sourceURL = btoa("https://s3-us-west-1.amazonaws.com/choxi-general/workshop-html-css.tgz")
-                window.pty = new WebSocket(`ws://localhost:3000/pty?source_url=${sourceURL}`)
+                containerID = "514dfbb9-3864-49e6-b614-27dd699b628f"
+                window.pty = new WebSocket(`ws://localhost:3000/pty?container_id=${containerID}`)
                 window.send = function(command) {
                     pty.send(btoa(command))
                 }
