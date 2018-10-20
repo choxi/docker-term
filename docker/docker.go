@@ -27,11 +27,10 @@ type Pty struct {
 
 // CreateContainer takes a source URL for a repo with a Dockerfile,
 // builds an image for it, and returns a Container for that image.
-func CreateContainer(sourceURL string) (Container, error) {
+func CreateContainer(containerID uuid.UUID, sourceURL string) (Container, error) {
 	var err error
 
 	imageID, _ := uuid.NewV4()
-	containerID, _ := uuid.NewV4()
 
 	downloadPath := fmt.Sprintf("./tmp/containers/%s/", imageID.String())
 	repoPath := downloadPath + "repo"

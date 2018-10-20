@@ -12,6 +12,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+
+	"github.com/satori/go.uuid"
 )
 
 // Server is a http server
@@ -55,18 +57,28 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		err       error
 		pty       docker.Pty
-		container docker.Container
+		dctr      docker.Container
 		webSocket ws.WS
 		params    parameters
 		adapter   *streams.Adapter
+		ctr       db.Container
+		database  db.DB
+		image     db.Image
 	)
 
 	webSocket = ws.FromContext(r.Context())
 	params = parseParams(r.URL.Query())
 	adapter = containerPool[params.ContainerID]
 
-	if params.ContainerID != "" && adapter == nil {
-		fmt.Println("Container not found: " + params.ContainerID)
+	// if params.ContainerID != "" && adapter == nil {
+	// 	container, err = db.FindContainer(params.ContainerID)
+	// 	fmt.Println("Container not found: " + params.ContainerID)
+	// 	return
+	// }
+	database = db.Connect()
+
+	if params.ContainerID == "" {
+		fmt.Println("No ContainerID")
 		return
 	}
 
@@ -76,23 +88,33 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if container, err = docker.CreateContainer(params.SourceURL); err != nil {
+	if ctr, err = database.FindContainer(params.ContainerID); err != nil {
+		fmt.Println("Container not found")
+		return
+	}
+
+	if image, err = database.FindImage(ctr.ImageID); err != nil {
+		fmt.Println("Image not found")
+	}
+
+	uid, _ := uuid.FromString(ctr.UUID)
+	if dctr, err = docker.CreateContainer(uid, image.SourceURL); err != nil {
 		log.Fatalln(err)
 		return
 	}
 
-	defer container.Stop()
+	defer dctr.Stop()
 
-	if pty, err = container.Bash(); err != nil {
+	if pty, err = dctr.Bash(); err != nil {
 		log.Fatalln(err)
 		return
 	}
 	defer pty.Stop()
 
 	newAdapter := streams.NewAdapter(&pty, &webSocket)
-	containerPool[container.ID.String()] = &newAdapter
+	containerPool[dctr.ID.String()] = &newAdapter
 
-	fmt.Println("Connecting to ContainerID: " + container.ID.String())
+	fmt.Println("Connecting to ContainerID: " + dctr.ID.String())
 
 	err = newAdapter.Connect()
 }

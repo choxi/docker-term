@@ -101,13 +101,28 @@ func (d *DB) CreateContainer(image *Image) (Container, error) {
 	return container, nil
 }
 
-func (d *DB) Containers() ([]Container, error) {
-	var containers []Container
-	var err error
+func (d *DB) FindContainer(id string) (Container, error) {
+	var (
+		container Container
+		err       error
+	)
 
-	if err = d.connection.Select(&containers, "SELECT * FROM containers"); err != nil {
-		return []Container{}, err
+	if err = d.connection.Get(&container, "SELECT * FROM containers WHERE uuid=$1", id); err != nil {
+		return container, err
 	}
 
-	return containers, nil
+	return container, nil
+}
+
+func (d *DB) FindImage(id int) (Image, error) {
+	var (
+		image Image
+		err   error
+	)
+
+	if err = d.connection.Get(&image, "SELECT * FROM images WHERE id=$1", id); err != nil {
+		return image, err
+	}
+
+	return image, nil
 }
