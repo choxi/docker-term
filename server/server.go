@@ -69,44 +69,43 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	webSocket = ws.FromContext(r.Context())
 	params = parseParams(r.URL.Query())
 	adapter = containerPool[params.ContainerID]
-
-	// if params.ContainerID != "" && adapter == nil {
-	// 	container, err = db.FindContainer(params.ContainerID)
-	// 	fmt.Println("Container not found: " + params.ContainerID)
-	// 	return
-	// }
 	database = db.Connect()
 
 	if params.ContainerID == "" {
-		fmt.Println("No ContainerID")
+		http.Error(w, "No container_id", http.StatusBadRequest)
 		return
 	}
 
 	if params.ContainerID != "" && adapter != nil {
-		fmt.Println("Connecting to ContainerID: " + params.ContainerID)
+		log.Println("Connecting to ContainerID: " + params.ContainerID)
 		adapter.AddStream(&webSocket)
 		return
 	}
 
 	if ctr, err = database.FindContainer(params.ContainerID); err != nil {
-		fmt.Println("Container not found")
+		log.Println(err)
+		http.Error(w, "Container not found", http.StatusBadRequest)
 		return
 	}
 
 	if image, err = database.FindImage(ctr.ImageID); err != nil {
-		fmt.Println("Image not found")
+		log.Println(err)
+		http.Error(w, "Image not found", http.StatusBadRequest)
+		return
 	}
 
 	uid, _ := uuid.FromString(ctr.UUID)
 	if dctr, err = docker.CreateContainer(uid, image.SourceURL); err != nil {
-		log.Fatalln(err)
+		log.Println(err)
+		http.Error(w, "Container could not be built", http.StatusInternalServerError)
 		return
 	}
 
 	defer dctr.Stop()
 
 	if pty, err = dctr.Bash(); err != nil {
-		log.Fatalln(err)
+		log.Println(err)
+		http.Error(w, "Container could not be started", http.StatusInternalServerError)
 		return
 	}
 	defer pty.Stop()
