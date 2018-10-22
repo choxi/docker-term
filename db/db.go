@@ -31,6 +31,10 @@ type DB struct {
 
 type queryParams map[string]interface{}
 
+func (d *DB) Connection() *sqlx.DB {
+	return d.connection
+}
+
 func Connect() DB {
 	var (
 		dbname     string

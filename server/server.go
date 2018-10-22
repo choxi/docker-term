@@ -6,6 +6,7 @@ import (
 	"Dre/streams"
 	"Dre/utils"
 	"Dre/ws"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 
 	"github.com/satori/go.uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Server is a http server
@@ -33,6 +35,8 @@ func (s *Server) Start(staticDir string, port string) error {
 
 	http.Handle("/v1/pty", ws.Middleware(finalHandler))
 	http.HandleFunc("/v1/containers", containersHandler)
+	http.HandleFunc("/v1/users", signupHandler)
+	http.HandleFunc("/v1/sessions", signinHandler)
 	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 
 	addr := "localhost:" + port
@@ -143,6 +147,58 @@ func containersHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(container)
+}
+
+type Credentials struct {
+	Password string `json:"password", db:"password"`
+	Username string `json:"username", db:"username"`
+}
+
+func signupHandler(w http.ResponseWriter, r *http.Request) {
+	creds := &Credentials{}
+	err := json.NewDecoder(r.Body).Decode(creds)
+	database := db.Connect()
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(creds.Password), 8)
+
+	if _, err = database.Connection().Query("INSERT INTO users (username, password) VALUES ($1, $2)", creds.Username, string(hashedPassword)); err != nil {
+		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func signinHandler(w http.ResponseWriter, r *http.Request) {
+	creds := &Credentials{}
+	err := json.NewDecoder(r.Body).Decode(creds)
+	database := db.Connect()
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	result := database.Connection().QueryRow("SELECT password FROM users WHERE username=$1", creds.Username)
+	storedCreds := &Credentials{}
+	err = result.Scan(&storedCreds.Password)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if err = bcrypt.CompareHashAndPassword([]byte(storedCreds.Password), []byte(creds.Password)); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+	}
 }
 
 func parseJSON(r *http.Request) (parameters, error) {
