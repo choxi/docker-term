@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"Dre/utils"
+	"dre/utils"
 	"encoding/base64"
 	"fmt"
 	"log"

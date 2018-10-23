@@ -1,19 +1,20 @@
 package server
 
 import (
-	"Dre/db"
-	"Dre/docker"
-	"Dre/streams"
-	"Dre/utils"
-	"Dre/ws"
 	"context"
 	"database/sql"
+	"dre/db"
+	"dre/docker"
+	"dre/streams"
+	"dre/utils"
+	"dre/ws"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
@@ -35,7 +36,8 @@ func New() Server {
 }
 
 // Start runs the server and listens on the provided port
-func (s *Server) Start(staticDir string, port string) error {
+func (s *Server) Start(staticDir string, port int) error {
+	fmt.Printf("PORT: %v\n", port)
 	finalHandler := http.HandlerFunc(ptyHandler)
 
 	http.Handle("/v1/pty", ws.Middleware(finalHandler))
@@ -44,7 +46,9 @@ func (s *Server) Start(staticDir string, port string) error {
 	http.HandleFunc("/v1/sessions", signinHandler)
 	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 
-	addr := "localhost:" + port
+	portStr := strconv.FormatInt(int64(port), 10)
+	addr := "localhost:" + portStr
+	fmt.Println("Listening on: " + addr)
 	err := http.ListenAndServe(addr, nil)
 
 	if err != nil {
