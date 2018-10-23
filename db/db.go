@@ -9,13 +9,18 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-type User {
-	username string `db:"username"`
+type User struct {
+	ID        int    `db:"id"`
+	Username  string `db:"username"`
+	Password  string `db:"password"`
+	UpdatedAt string `db:"updated_at" json:"updated_at"`
+	CreatedAt string `db:"created_at" json:"created_at"`
 }
 
 type Image struct {
 	ID        int    `db:"id" json:"id"`
 	UUID      string `db:"uuid" json:"uuid"`
+	UserID    int    `db:"user_id" json:"user_id"`
 	SourceURL string `db:"source_url" json:"source_url"`
 	UpdatedAt string `db:"updated_at" json:"updated_at"`
 	CreatedAt string `db:"created_at" json:"created_at"`
@@ -56,7 +61,7 @@ func Connect() DB {
 	return DB{connection}
 }
 
-func (d *DB) CreateImage(sourceURL string) (Image, error) {
+func (d *DB) CreateImage(user User, sourceURL string) (Image, error) {
 	var (
 		image Image
 		query string
@@ -65,11 +70,12 @@ func (d *DB) CreateImage(sourceURL string) (Image, error) {
 	)
 
 	uid, _ = uuid.NewV4()
-	query = "INSERT INTO images (uuid, source_url) VALUES (:uuid, :source_url)"
+	query = "INSERT INTO images (uuid, source_url, user_id) VALUES (:uuid, :source_url, :user_id)"
 
 	if _, err = d.connection.NamedExec(query, map[string]interface{}{
 		"uuid":       uid.String(),
 		"source_url": sourceURL,
+		"user_id":    user.ID,
 	}); err != nil {
 		return Image{}, err
 	}
@@ -136,12 +142,12 @@ func (d *DB) FindImage(id int) (Image, error) {
 }
 
 func (d *DB) FindUser(username string) (User, error) {
-	var u User
+	var user User
 	var err error
 
 	if err = d.connection.Get(&user, "SELECT * FROM users WHERE username=$1", username); err != nil {
-		return u, err
+		return user, err
 	}
 
-	return u, nil
+	return user, nil
 }

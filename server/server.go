@@ -134,7 +134,10 @@ func containersHandler(w http.ResponseWriter, r *http.Request) {
 		err       error
 		image     db.Image
 		container db.Container
+		user      db.User
 	)
+
+	user = userFromContext(r.Context())
 
 	if params, err = parseJSON(r); err != nil {
 		fmt.Println(err)
@@ -142,7 +145,7 @@ func containersHandler(w http.ResponseWriter, r *http.Request) {
 
 	database = db.Connect()
 
-	if image, err = database.CreateImage(params.SourceURL); err != nil {
+	if image, err = database.CreateImage(user, params.SourceURL); err != nil {
 		fmt.Println(err)
 	}
 
@@ -228,6 +231,7 @@ func authenticateMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("start authenticateMiddleware")
 		authorization := r.Header.Get("Authorization")
+		database := db.Connect()
 
 		if authorization == "" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -250,7 +254,14 @@ func authenticateMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			if user, err := db.FindUser(claims["username"]); err != nil {
+			var username string
+			var user db.User
+			if username, ok = claims["username"].(string); !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			if user, err = database.FindUser(username); err != nil {
 				fmt.Println(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
