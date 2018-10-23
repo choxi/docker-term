@@ -1,3 +1,9 @@
+## TODO
+
+- [] add accounts
+- [] track usage
+- [] implement frontend
+
 ## Useful Docker Commands
 
 Kill all containers

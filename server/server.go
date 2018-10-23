@@ -8,7 +8,6 @@ import (
 	"dre/utils"
 	"dre/ws"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,22 +32,24 @@ func New(database *db.DB) Server {
 
 // Start runs the server and listens on the provided port
 func (s *Server) Start(staticDir string, port int) error {
-	finalHandler := http.HandlerFunc(ptyHandler)
+	var (
+		portStr string
+		addr    string
+		err     error
+	)
 
-	http.Handle("/v1/pty", dbMiddleware(s.database, ws.Middleware(finalHandler)))
-	http.HandleFunc("/v1/containers", dbMiddleware(s.database, authenticateMiddleware(containersHandler)))
-	http.HandleFunc("/v1/users", dbMiddleware(s.database, signupHandler))
-	http.HandleFunc("/v1/sessions", dbMiddleware(s.database, signinHandler))
+	http.Handle("/v1/pty", dbMiddleware(s.database, ws.Middleware(ptyHandler)))
+	http.Handle("/v1/containers", dbMiddleware(s.database, authenticateMiddleware(containersHandler)))
+	http.Handle("/v1/users", dbMiddleware(s.database, signupHandler))
+	http.Handle("/v1/sessions", dbMiddleware(s.database, signinHandler))
 	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 
-	portStr := strconv.FormatInt(int64(port), 10)
-	addr := "localhost:" + portStr
+	portStr = strconv.FormatInt(int64(port), 10)
+	addr = "localhost:" + portStr
 	fmt.Println("Listening on: " + addr)
-	err := http.ListenAndServe(addr, nil)
 
-	if err != nil {
-		message := fmt.Sprintf("net.http could not listen on address '%s': %s\n", addr, err)
-		return errors.New(message)
+	if err = http.ListenAndServe(addr, nil); err != nil {
+		return fmt.Errorf("net.http could not listen on address '%s': %s", addr, err)
 	}
 
 	return nil
