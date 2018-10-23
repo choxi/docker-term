@@ -57,8 +57,8 @@ func (ws *WS) Read() ([]byte, error) {
 
 // Middleware creates a websocket connection and adds it to the request context
 // defer conn.Close()
-func Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func Middleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("start wsMiddlewareOne")
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -69,7 +69,7 @@ func Middleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), wsKey, ws)
 		next.ServeHTTP(w, r.WithContext(ctx))
 		log.Println("end wsMiddlewareOne")
-	})
+	}
 }
 
 // GetWS takes a context and returns its WS connection

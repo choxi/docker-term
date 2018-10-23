@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"dre/db"
 	"dre/docker"
 	"dre/streams"
@@ -17,33 +16,29 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/satori/go.uuid"
-	"golang.org/x/crypto/bcrypt"
 )
-
-var secret = []byte("PANCAKES")
 
 // Server is a http server
 type Server struct {
+	database *db.DB
 }
 
 // New returns a new Server with initialized handlers
-func New() Server {
-	server := Server{}
+func New(database *db.DB) Server {
+	server := Server{database}
 
 	return server
 }
 
 // Start runs the server and listens on the provided port
 func (s *Server) Start(staticDir string, port int) error {
-	fmt.Printf("PORT: %v\n", port)
 	finalHandler := http.HandlerFunc(ptyHandler)
 
-	http.Handle("/v1/pty", ws.Middleware(finalHandler))
-	http.HandleFunc("/v1/containers", authenticateMiddleware(containersHandler))
-	http.HandleFunc("/v1/users", signupHandler)
-	http.HandleFunc("/v1/sessions", signinHandler)
+	http.Handle("/v1/pty", dbMiddleware(s.database, ws.Middleware(finalHandler)))
+	http.HandleFunc("/v1/containers", dbMiddleware(s.database, authenticateMiddleware(containersHandler)))
+	http.HandleFunc("/v1/users", dbMiddleware(s.database, signupHandler))
+	http.HandleFunc("/v1/sessions", dbMiddleware(s.database, signinHandler))
 	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 
 	portStr := strconv.FormatInt(int64(port), 10)
@@ -75,14 +70,16 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 		params    parameters
 		adapter   *streams.Adapter
 		ctr       db.Container
-		database  db.DB
+		database  *db.DB
 		image     db.Image
+		ctx       context.Context
 	)
 
-	webSocket = ws.FromContext(r.Context())
+	ctx = r.Context()
+	webSocket = ws.FromContext(ctx)
+	database = dbFromContext(ctx)
 	params = parseParams(r.URL.Query())
 	adapter = containerPool[params.ContainerID]
-	database = db.Connect()
 
 	if params.ContainerID == "" {
 		http.Error(w, "No container_id", http.StatusBadRequest)
@@ -139,20 +136,21 @@ func containersHandler(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		params    parameters
-		database  db.DB
+		database  *db.DB
 		err       error
 		image     db.Image
 		container db.Container
 		user      db.User
+		ctx       context.Context
 	)
 
-	user = userFromContext(r.Context())
+	ctx = r.Context()
+	user = userFromContext(ctx)
+	database = dbFromContext(ctx)
 
 	if params, err = parseJSON(r); err != nil {
 		fmt.Println(err)
 	}
-
-	database = db.Connect()
 
 	if image, err = database.CreateImage(user, params.SourceURL); err != nil {
 		fmt.Println(err)
@@ -166,33 +164,33 @@ func containersHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(container)
 }
 
-type Credentials struct {
-	Password string `json:"password", db:"password"`
-	Username string `json:"username", db:"username"`
-}
-
 func signupHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	creds := &Credentials{}
-	err := json.NewDecoder(r.Body).Decode(creds)
-	database := db.Connect()
+	var (
+		creds    = &db.Credentials{}
+		err      error
+		database *db.DB
+		user     db.User
+	)
 
-	if err != nil {
+	if err = json.NewDecoder(r.Body).Decode(creds); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(creds.Password), 8)
-
-	if _, err = database.Connection().Query("INSERT INTO users (username, password) VALUES ($1, $2)", creds.Username, string(hashedPassword)); err != nil {
+	database = dbFromContext(r.Context())
+	if user, err = database.CreateUser(creds.Username, creds.Password); err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
 }
 
 func signinHandler(w http.ResponseWriter, r *http.Request) {
@@ -201,47 +199,26 @@ func signinHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creds := &Credentials{}
-	err := json.NewDecoder(r.Body).Decode(creds)
-	database := db.Connect()
+	var (
+		creds    = &db.Credentials{}
+		err      error
+		database *db.DB
+		user     db.User
+		token    string
+	)
 
-	if err != nil {
+	if err = json.NewDecoder(r.Body).Decode(creds); err != nil {
+		fmt.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	result := database.Connection().QueryRow("SELECT password FROM users WHERE username=$1", creds.Username)
-	storedCreds := &Credentials{}
-	err = result.Scan(&storedCreds.Password)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if err = bcrypt.CompareHashAndPassword([]byte(storedCreds.Password), []byte(creds.Password)); err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": creds.Username,
-	})
-
-	tokenString, err := token.SignedString(secret)
-
-	if err != nil {
-		fmt.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
+	database = dbFromContext(r.Context())
+	user, err = database.SignInUser(creds.Username, creds.Password)
+	token, err = db.CreateToken(&user)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"token": tokenString,
-	})
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
 const userKey = "USER_KEY"
@@ -249,49 +226,30 @@ const userKey = "USER_KEY"
 func authenticateMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("start authenticateMiddleware")
-		authorization := r.Header.Get("Authorization")
-		database := db.Connect()
 
-		if authorization == "" {
+		var (
+			user          db.User
+			authorization string
+			token         string
+			err           error
+			database      *db.DB
+		)
+
+		if authorization = r.Header.Get("Authorization"); authorization == "" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
-		tokenString := strings.Split(authorization, "Bearer ")[1]
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-			}
+		database = dbFromContext(r.Context())
+		token = strings.Split(authorization, "Bearer ")[1]
 
-			return secret, nil
-		})
-
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			var username string
-			var user db.User
-			if username, ok = claims["username"].(string); !ok {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			if user, err = database.FindUser(username); err != nil {
-				fmt.Println(err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), userKey, user)
-			next(w, r.WithContext(ctx))
-		} else {
+		if user, err = database.AuthenticateToken(token); err != nil {
 			fmt.Println(err)
 			w.WriteHeader(http.StatusUnauthorized)
 		}
+
+		ctx := context.WithValue(r.Context(), userKey, user)
+		next(w, r.WithContext(ctx))
 
 		log.Println("end authenticateMiddleware")
 	}
@@ -299,6 +257,21 @@ func authenticateMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func userFromContext(ctx context.Context) db.User {
 	return ctx.Value(userKey).(db.User)
+}
+
+var dbKey = "DB_KEY"
+
+func dbMiddleware(database *db.DB, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("begin dbMiddleware")
+		ctx := context.WithValue(r.Context(), dbKey, database)
+		next(w, r.WithContext(ctx))
+		log.Println("end dbMiddleware")
+	}
+}
+
+func dbFromContext(ctx context.Context) *db.DB {
+	return ctx.Value(dbKey).(*db.DB)
 }
 
 func parseJSON(r *http.Request) (parameters, error) {

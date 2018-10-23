@@ -4,15 +4,22 @@ import (
 	"fmt"
 	"log"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	uuid "github.com/satori/go.uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
+type Credentials struct {
+	Password string `json:"password", db:"password"`
+	Username string `json:"username", db:"username"`
+}
+
 type User struct {
-	ID        int    `db:"id"`
-	Username  string `db:"username"`
-	Password  string `db:"password"`
+	ID        int    `db:"id" json:"id"`
+	Username  string `db:"username" json:"username"`
+	Password  string `db:"password" json:"-"`
 	UpdatedAt string `db:"updated_at" json:"updated_at"`
 	CreatedAt string `db:"created_at" json:"created_at"`
 }
@@ -39,10 +46,6 @@ type DB struct {
 }
 
 type queryParams map[string]interface{}
-
-func (d *DB) Connection() *sqlx.DB {
-	return d.connection
-}
 
 func Connect() DB {
 	var (
@@ -142,11 +145,106 @@ func (d *DB) FindImage(id int) (Image, error) {
 }
 
 func (d *DB) FindUser(username string) (User, error) {
-	var user User
-	var err error
+	var (
+		user User
+		err  error
+	)
 
 	if err = d.connection.Get(&user, "SELECT * FROM users WHERE username=$1", username); err != nil {
+		return User{}, err
+	}
+
+	return user, nil
+}
+
+func (d *DB) CreateUser(username string, password string) (User, error) {
+	var (
+		err    error
+		user   User
+		query  = "INSERT INTO users (username, password) VALUES ($1, $2)"
+		hashed []byte
+	)
+
+	if hashed, err = bcrypt.GenerateFromPassword([]byte(password), 8); err != nil {
 		return user, err
+	}
+
+	if _, err = d.connection.Query(query, username, string(hashed)); err != nil {
+		return user, err
+	}
+
+	return user, nil
+}
+
+func (d *DB) SignInUser(username string, password string) (User, error) {
+	var (
+		err  error
+		user User
+	)
+
+	if err = d.connection.Get(&user, "SELECT * FROM users WHERE username=$1", username); err != nil {
+		return User{}, err
+	}
+
+	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return User{}, err
+	}
+
+	return user, nil
+}
+
+var secret = []byte("PANCAKES")
+
+func CreateToken(user *User) (string, error) {
+	var (
+		token       *jwt.Token
+		tokenString string
+		err         error
+	)
+
+	token = jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": user.Username,
+	})
+
+	if tokenString, err = token.SignedString(secret); err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+func (d *DB) AuthenticateToken(tokenString string) (User, error) {
+	var (
+		token    *jwt.Token
+		err      error
+		ok       bool
+		claims   jwt.MapClaims
+		username string
+		user     User
+	)
+
+	token, err = jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok = token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+		}
+
+		return secret, nil
+	})
+
+	if err != nil {
+		return User{}, err
+	}
+
+	if claims, ok = token.Claims.(jwt.MapClaims); !ok || !token.Valid {
+		return User{}, fmt.Errorf("Invalid authentication token")
+	}
+
+	if username, ok = claims["username"].(string); !ok {
+		return User{}, err
+	}
+
+	if user, err = d.FindUser(username); err != nil {
+		return User{}, err
 	}
 
 	return user, nil
