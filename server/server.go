@@ -128,6 +128,11 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func containersHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	var (
 		params    parameters
 		database  db.DB
@@ -163,6 +168,11 @@ type Credentials struct {
 }
 
 func signupHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	creds := &Credentials{}
 	err := json.NewDecoder(r.Body).Decode(creds)
 	database := db.Connect()
@@ -182,6 +192,11 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func signinHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
 	creds := &Credentials{}
 	err := json.NewDecoder(r.Body).Decode(creds)
 	database := db.Connect()
