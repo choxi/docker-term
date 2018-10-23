@@ -6,6 +6,7 @@ import (
 	"Dre/streams"
 	"Dre/utils"
 	"Dre/ws"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,10 +14,14 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/satori/go.uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var secret = []byte("PANCAKES")
 
 // Server is a http server
 type Server struct {
@@ -34,7 +39,7 @@ func (s *Server) Start(staticDir string, port string) error {
 	finalHandler := http.HandlerFunc(ptyHandler)
 
 	http.Handle("/v1/pty", ws.Middleware(finalHandler))
-	http.HandleFunc("/v1/containers", containersHandler)
+	http.HandleFunc("/v1/containers", authenticateMiddleware(containersHandler))
 	http.HandleFunc("/v1/users", signupHandler)
 	http.HandleFunc("/v1/sessions", signinHandler)
 	http.Handle("/", http.FileServer(http.Dir(staticDir)))
@@ -199,6 +204,71 @@ func signinHandler(w http.ResponseWriter, r *http.Request) {
 	if err = bcrypt.CompareHashAndPassword([]byte(storedCreds.Password), []byte(creds.Password)); err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"username": creds.Username,
+	})
+
+	tokenString, err := token.SignedString(secret)
+
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": tokenString,
+	})
+}
+
+const userKey = "USER_KEY"
+
+func authenticateMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("start authenticateMiddleware")
+		authorization := r.Header.Get("Authorization")
+
+		if authorization == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.Split(authorization, "Bearer ")[1]
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+			}
+
+			return secret, nil
+		})
+
+		if err != nil {
+			fmt.Println(err)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			if user, err := db.FindUser(claims["username"]); err != nil {
+				fmt.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), userKey, user)
+			next(w, r.WithContext(ctx))
+		} else {
+			fmt.Println(err)
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+
+		log.Println("end authenticateMiddleware")
+	}
+}
+
+func userFromContext(ctx context.Context) db.User {
+	return ctx.Value(userKey).(db.User)
 }
 
 func parseJSON(r *http.Request) (parameters, error) {

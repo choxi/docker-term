@@ -9,6 +9,10 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+type User {
+	username string `db:"username"`
+}
+
 type Image struct {
 	ID        int    `db:"id" json:"id"`
 	UUID      string `db:"uuid" json:"uuid"`
@@ -129,4 +133,15 @@ func (d *DB) FindImage(id int) (Image, error) {
 	}
 
 	return image, nil
+}
+
+func (d *DB) FindUser(username string) (User, error) {
+	var u User
+	var err error
+
+	if err = d.connection.Get(&user, "SELECT * FROM users WHERE username=$1", username); err != nil {
+		return u, err
+	}
+
+	return u, nil
 }
