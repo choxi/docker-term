@@ -112,21 +112,45 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer dctr.Stop()
+	log.Println("Starting container...")
+
+	dctr.OnStart = ctr.Start
+	dctr.OnStop = ctr.End
+
+	// defer dctr.Stop()
 
 	if pty, err = dctr.Bash(); err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		http.Error(w, "Container could not be started", http.StatusInternalServerError)
 		return
 	}
-	defer pty.Stop()
+	// defer pty.Stop()
 
 	newAdapter := streams.NewAdapter(&pty, &webSocket)
 	containerPool[dctr.ID.String()] = &newAdapter
+	newAdapter.OnDisconnect = func() error {
+		var err error
+
+		if err = pty.Stop(); err != nil {
+			return err
+		}
+
+		// Need to wait to see if others are still connected
+		if err = dctr.Stop(); err != nil {
+			return err
+		}
+
+		return nil
+	}
 
 	fmt.Println("Connecting to ContainerID: " + dctr.ID.String())
 
-	err = newAdapter.Connect()
+	go func() {
+		newAdapter.Connect()
+		containerPool[dctr.ID.String()] = nil
+	}()
+
+	fmt.Println("Done")
 }
 
 func containersHandler(w http.ResponseWriter, r *http.Request) {

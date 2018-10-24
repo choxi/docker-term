@@ -40,14 +40,6 @@ type Image struct {
 	CreatedAt string `db:"created_at" json:"created_at"`
 }
 
-type Container struct {
-	ID        int    `db:"id" json:"id"`
-	UUID      string `db:"uuid" json:"uuid"`
-	ImageID   int    `db:"image_id" json:"image_id"`
-	UpdatedAt string `db:"updated_at" json:"updated_at"`
-	CreatedAt string `db:"created_at" json:"created_at"`
-}
-
 type DB struct {
 	connection *sqlx.DB
 }
@@ -96,46 +88,6 @@ func (d *DB) CreateImage(user User, sourceURL string) (Image, error) {
 	}
 
 	return image, nil
-}
-
-func (d *DB) CreateContainer(image *Image) (Container, error) {
-	var (
-		container Container
-		query     string
-		err       error
-		uid       uuid.UUID
-	)
-
-	uid, _ = uuid.NewV4()
-	query = "INSERT INTO containers (uuid, image_id) VALUES (:uuid, :image_id)"
-
-	if _, err = d.connection.NamedExec(query, map[string]interface{}{
-		"status":   "active",
-		"uuid":     uid.String(),
-		"image_id": image.ID,
-	}); err != nil {
-		return container, err
-	}
-
-	query = "SELECT * FROM containers WHERE uuid=$1"
-	if err = d.connection.Get(&container, query, uid.String()); err != nil {
-		return container, err
-	}
-
-	return container, nil
-}
-
-func (d *DB) FindContainer(id string) (Container, error) {
-	var (
-		container Container
-		err       error
-	)
-
-	if err = d.connection.Get(&container, "SELECT * FROM containers WHERE uuid=$1", id); err != nil {
-		return container, err
-	}
-
-	return container, nil
 }
 
 func (d *DB) FindImage(id int) (Image, error) {

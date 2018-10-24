@@ -1,6 +1,7 @@
 package streams
 
 import (
+	"dre/utils"
 	"errors"
 	"fmt"
 	"log"
@@ -21,14 +22,15 @@ type Mux struct {
 
 // Adapter connects a pty to a webSocket
 type Adapter struct {
-	source  Stream
-	streams []Stream
-	mux     *Mux
+	source       Stream
+	streams      []Stream
+	mux          *Mux
+	OnDisconnect func() error
 }
 
 // NewAdapter takes streams and returns a Adapter
 func NewAdapter(source Stream, stms ...Stream) Adapter {
-	adapter := Adapter{source, stms, nil}
+	adapter := Adapter{source: source, streams: stms}
 	return adapter
 }
 
@@ -97,15 +99,21 @@ func (a *Adapter) Connect() error {
 	for _, str := range a.streams {
 		wg.Add(1)
 		go func(s Stream) {
-			err := pipeStreams(s, a.source)
-			log.Println(err)
+			if err := pipeStreams(s, a.source); err != nil {
+				log.Println(err)
+			}
+
 			wg.Done()
 		}(str)
 	}
 
 	wg.Wait()
 
-	log.Fatalf("Adapter disconnected")
+	if a.OnDisconnect != nil {
+		if err := a.OnDisconnect(); err != nil {
+			return utils.Error(err, "streams: ondisconnect failed")
+		}
+	}
 
 	return nil
 }

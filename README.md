@@ -1,7 +1,8 @@
 ## TODO
 
 - [x] add accounts
-- [] track usage
+- [x] track usage
+- [] handle "exit"
 - [] implement frontend
 
 ## Useful Docker Commands
@@ -9,7 +10,7 @@
 Kill all containers
 
 ```bash
-$ docker rm $(docker ps -q) 
+$ docker kill $(docker ps -q) 
 ```
 
 Delete all stopped containers

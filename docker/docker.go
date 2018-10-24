@@ -17,6 +17,8 @@ type Container struct {
 	ID      uuid.UUID
 	imageID uuid.UUID
 	pty     *Pty
+	OnStart func() error
+	OnStop  func() error
 }
 
 // Pty is a pty connection to a command
@@ -52,7 +54,7 @@ func CreateContainer(containerID uuid.UUID, sourceURL string) (Container, error)
 		return Container{}, err
 	}
 
-	return Container{containerID, imageID, nil}, nil
+	return Container{ID: containerID, imageID: imageID}, nil
 }
 
 // Bash runs /bin/bash in the container and returns a pty connection
@@ -67,9 +69,16 @@ func (c *Container) Run(command string) (Pty, error) {
 		pty Pty
 	)
 
-	pty.Cmd = exec.Command("docker", "run", "-it", c.imageID.String(), command)
+	pty.Cmd = exec.Command("docker", "run", "--name", c.ID.String(), "-it", c.imageID.String(), command)
 	if pty.Conn, err = pseudoterm.Start(pty.Cmd); err != nil {
-		return Pty{}, err
+		return Pty{}, utils.Error(err, "docker: pty not started")
+	}
+
+	if c.OnStart != nil {
+		if err = c.OnStart(); err != nil {
+			pty.Stop()
+			return Pty{}, utils.Error(err, "docker: onstart failed")
+		}
 	}
 
 	return pty, nil
@@ -77,6 +86,26 @@ func (c *Container) Run(command string) (Pty, error) {
 
 // Stop kills the container and cleans up its volume and image
 func (c *Container) Stop() error {
+	var err error
+
+	// if err = p.Cmd.Process.Kill(); err != nil {
+	// 	return utils.Error(err, "docker: could not kill process")
+	// }
+
+	if err = utils.Exec("docker", "kill", c.ID.String()); err != nil {
+		return utils.Error(err, "docker: container not stopped")
+	}
+
+	if err = utils.Exec("docker", "rm", "-v", c.ID.String()); err != nil {
+		return utils.Error(err, "docker: container not removed")
+	}
+
+	if c.OnStop != nil {
+		if err = c.OnStop(); err != nil {
+			return utils.Error(err, "")
+		}
+	}
+
 	return nil
 }
 
@@ -85,12 +114,14 @@ func (p *Pty) Stop() error {
 	var err error
 
 	if err = p.Conn.Close(); err != nil {
-		return err
+		return utils.Error(err, "docker: pty not closed")
 	}
 
-	if err = p.Cmd.Wait(); err != nil {
-		return err
-	}
+	// if err = p.Cmd.Wait(); err != nil {
+	// 	if err.Error() != "signal: killed" {
+	// 		return utils.Error(err, "docker: bad kill")
+	// 	}
+	// }
 
 	return nil
 }

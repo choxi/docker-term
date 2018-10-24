@@ -6,7 +6,7 @@
 
         <script>
             document.addEventListener("DOMContentLoaded", function() {
-                containerID = "18f2e917-c82c-41c8-81ff-5160881ab506"
+                containerID = "69e66fa4-bc6c-4f1a-a523-c882d8cc3738"
                 window.pty = new WebSocket(`ws://localhost:3000/v1/pty?container_id=${containerID}`)
                 window.send = function(command) {
                     pty.send(btoa(command))

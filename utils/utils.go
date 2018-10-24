@@ -9,7 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+
+	"github.com/pkg/errors"
 )
+
+func Error(err error, message string) error {
+	return errors.Wrap(err, message+"\n")
+}
 
 func Decode64(encoded string) string {
 	data, err := base64.StdEncoding.DecodeString(encoded)
