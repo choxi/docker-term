@@ -1,6 +1,6 @@
 ## TODO
 
-- [] add accounts
+- [x] add accounts
 - [] track usage
 - [] implement frontend
 

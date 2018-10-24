@@ -16,8 +16,15 @@ type Credentials struct {
 	Username string `json:"username", db:"username"`
 }
 
+type account struct {
+	ID        int    `db:"id" json:"id"`
+	UpdatedAt string `db:"updated_at" json:"updated_at"`
+	CreatedAt string `db:"created_at" json:"created_at"`
+}
+
 type User struct {
 	ID        int    `db:"id" json:"id"`
+	AccountID int    `db:"account_id" json:"account_id"`
 	Username  string `db:"username" json:"username"`
 	Password  string `db:"password" json:"-"`
 	UpdatedAt string `db:"updated_at" json:"updated_at"`
@@ -27,7 +34,7 @@ type User struct {
 type Image struct {
 	ID        int    `db:"id" json:"id"`
 	UUID      string `db:"uuid" json:"uuid"`
-	UserID    int    `db:"user_id" json:"user_id"`
+	AccountID int    `db:"account_id" json:"account_id"`
 	SourceURL string `db:"source_url" json:"source_url"`
 	UpdatedAt string `db:"updated_at" json:"updated_at"`
 	CreatedAt string `db:"created_at" json:"created_at"`
@@ -73,12 +80,12 @@ func (d *DB) CreateImage(user User, sourceURL string) (Image, error) {
 	)
 
 	uid, _ = uuid.NewV4()
-	query = "INSERT INTO images (uuid, source_url, user_id) VALUES (:uuid, :source_url, :user_id)"
+	query = "INSERT INTO images (uuid, source_url, account_id) VALUES (:uuid, :source_url, :account_id)"
 
 	if _, err = d.connection.NamedExec(query, map[string]interface{}{
 		"uuid":       uid.String(),
 		"source_url": sourceURL,
-		"user_id":    user.ID,
+		"account_id": user.AccountID,
 	}); err != nil {
 		return Image{}, err
 	}
@@ -161,19 +168,47 @@ func (d *DB) CreateUser(username string, password string) (User, error) {
 	var (
 		err    error
 		user   User
-		query  = "INSERT INTO users (username, password) VALUES ($1, $2)"
+		acct   account
+		query  = "INSERT INTO users (username, password, account_id) VALUES ($1, $2, $3)"
 		hashed []byte
 	)
 
-	if hashed, err = bcrypt.GenerateFromPassword([]byte(password), 8); err != nil {
-		return user, err
+	if acct, err = d.CreateAccount(); err != nil {
+		return User{}, err
 	}
 
-	if _, err = d.connection.Query(query, username, string(hashed)); err != nil {
-		return user, err
+	if hashed, err = bcrypt.GenerateFromPassword([]byte(password), 8); err != nil {
+		return User{}, err
+	}
+
+	if _, err = d.connection.Query(query, username, string(hashed), acct.ID); err != nil {
+		return User{}, err
+	}
+
+	if err = d.connection.Get(&user, "SELECT * FROM users WHERE username=$1", username); err != nil {
+		return User{}, err
 	}
 
 	return user, nil
+}
+
+func (d *DB) CreateAccount() (account, error) {
+	var (
+		err  error
+		acct account
+		id   int
+	)
+
+	r := d.connection.QueryRow("INSERT INTO accounts DEFAULT VALUES RETURNING id")
+	if err = r.Scan(&id); err != nil {
+		return account{}, err
+	}
+
+	if err = d.connection.Get(&acct, "SELECT * FROM accounts WHERE id=$1", id); err != nil {
+		return account{}, err
+	}
+
+	return acct, nil
 }
 
 func (d *DB) SignInUser(username string, password string) (User, error) {
