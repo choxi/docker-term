@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Server is a http server
@@ -38,7 +38,7 @@ func (s *Server) Start(staticDir string, port int) error {
 		err     error
 	)
 
-	http.Handle("/v1/pty", dbMiddleware(s.database, ws.Middleware(ptyHandler)))
+	http.Handle("/v1/pty", dbMiddleware(s.database, ws.Middleware(newPtyHandler)))
 	http.Handle("/v1/containers", dbMiddleware(s.database, authenticateMiddleware(containersHandler)))
 	http.Handle("/v1/users", dbMiddleware(s.database, signupHandler))
 	http.Handle("/v1/sessions", dbMiddleware(s.database, signinHandler))
@@ -61,6 +61,73 @@ type parameters struct {
 }
 
 var containerPool = make(map[string]*streams.Adapter)
+
+func newPtyHandler(w http.ResponseWriter, r *http.Request) {
+	var (
+		err       error
+		pty       docker.Pty
+		dctr      docker.Container
+		webSocket ws.WS
+		params    parameters
+		ctx       context.Context
+	)
+
+	ctx = r.Context()
+	webSocket = ws.FromContext(ctx)
+	params = parseParams(r.URL.Query())
+
+	log.Println(params)
+	if params.SourceURL == "" {
+		log.Println("Connecting to ContainerID: " + params.ContainerID)
+		return
+	}
+
+	if dctr, err = docker.CreateContainer(uuid.NewV4(), params.SourceURL); err != nil {
+		log.Println("Container could not be built")
+		log.Println(err)
+		return
+	}
+
+	log.Println("Starting container...")
+
+	// dctr.OnStart = ctr.Start
+	// dctr.OnStop = ctr.End
+
+	// defer dctr.Stop()
+
+	if pty, err = dctr.Bash(); err != nil {
+		fmt.Println(err)
+		http.Error(w, "Container could not be started", http.StatusInternalServerError)
+		return
+	}
+	// defer pty.Stop()
+
+	newAdapter := streams.NewAdapter(&pty, &webSocket)
+	containerPool[dctr.ID.String()] = &newAdapter
+	newAdapter.OnDisconnect = func() error {
+		var err error
+
+		if err = pty.Stop(); err != nil {
+			return err
+		}
+
+		// Need to wait to see if others are still connected
+		if err = dctr.Stop(); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	fmt.Println("Connecting to ContainerID: " + dctr.ID.String())
+
+	go func() {
+		newAdapter.Connect()
+		containerPool[dctr.ID.String()] = nil
+	}()
+
+	fmt.Println("Done")
+}
 
 func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	var (
