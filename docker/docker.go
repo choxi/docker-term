@@ -32,7 +32,7 @@ type Pty struct {
 func CreateContainer(containerID uuid.UUID, sourceURL string) (Container, error) {
 	var err error
 
-	imageID, _ := uuid.NewV4()
+	imageID := uuid.NewV4()
 
 	downloadPath := fmt.Sprintf("./tmp/containers/%s/", imageID.String())
 	repoPath := downloadPath + "repo"

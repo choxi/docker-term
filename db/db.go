@@ -71,7 +71,7 @@ func (d *DB) CreateImage(user User, sourceURL string) (Image, error) {
 		uid   uuid.UUID
 	)
 
-	uid, _ = uuid.NewV4()
+	uid = uuid.NewV4()
 	query = "INSERT INTO images (uuid, source_url, account_id) VALUES (:uuid, :source_url, :account_id)"
 
 	if _, err = d.connection.NamedExec(query, map[string]interface{}{

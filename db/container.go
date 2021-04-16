@@ -48,7 +48,7 @@ func (d *DB) CreateContainer(image *Image) (Container, error) {
 		uid       uuid.UUID
 	)
 
-	uid, _ = uuid.NewV4()
+	uid = uuid.NewV4()
 	query = "INSERT INTO containers (uuid, image_id) VALUES (:uuid, :image_id)"
 
 	if _, err = d.connection.NamedExec(query, map[string]interface{}{
