@@ -5,12 +5,27 @@
 - [] handle "exit"
 - [] implement frontend
 
+## Dev
+
+#### Server
+
+```
+$ go run main.go
+```
+
+#### Migrations
+
+```
+$ sql-migrate up
+```
+
+
 ## Useful Docker Commands
 
 Kill all containers
 
 ```bash
-$ docker kill $(docker ps -q) 
+$ docker kill $(docker ps -q)
 ```
 
 Delete all stopped containers
