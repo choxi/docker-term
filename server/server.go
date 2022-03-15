@@ -74,7 +74,35 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println(params)
 	if params.SourceURL == "" {
+		containerID, _ := uuid.FromString(params.ContainerID)
+		container := docker.Container{ID: containerID}
+		// adapter := containerPool[params.ContainerID.String()]
+		if pty, err = container.Connect("/bin/bash"); err != nil {
+			fmt.Println(err)
+			http.Error(w, "Could not connect to container", http.StatusInternalServerError)
+		}
+		newAdapter := streams.NewAdapter(&pty, &webSocket)
+		newAdapter.OnDisconnect = func() error {
+			var err error
+
+			if err = pty.Stop(); err != nil {
+				return err
+			}
+
+			// Need to wait to see if others are still connected
+			if err = dctr.Stop(); err != nil {
+				return err
+			}
+
+			return nil
+		}
 		log.Println("Connecting to ContainerID: " + params.ContainerID)
+
+		go func() {
+			newAdapter.Connect()
+			// containerPool[dctr.ID.String()] = nil
+		}()
+
 		return
 	}
 
@@ -113,7 +141,7 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		newAdapter.Connect()
-		containerPool[dctr.ID.String()] = nil
+		// containerPool[dctr.ID.String()] = nil
 	}()
 
 	fmt.Println("Done")

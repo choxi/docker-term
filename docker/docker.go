@@ -62,6 +62,28 @@ func (c *Container) Bash() (Pty, error) {
 	return c.Run("/bin/bash")
 }
 
+func (c *Container) Connect(command string) (Pty, error) {
+	var (
+		err error
+		pty Pty
+	)
+
+	// EXPORT set LINES=<number of lines in Terminal on frontend>
+	pty.Cmd = exec.Command("docker", "exec", "-it", c.ID.String(), command)
+	if pty.Conn, err = pseudoterm.Start(pty.Cmd); err != nil {
+		return Pty{}, utils.Error(err, "docker: pty not started")
+	}
+
+	if c.OnStart != nil {
+		if err = c.OnStart(); err != nil {
+			pty.Stop()
+			return Pty{}, utils.Error(err, "docker: onstart failed")
+		}
+	}
+
+	return pty, nil
+}
+
 // Run runs a command in the container and returns a pty connection
 func (c *Container) Run(command string) (Pty, error) {
 	var (
