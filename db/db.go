@@ -55,7 +55,7 @@ func Connect() DB {
 	)
 
 	dbname = "dre_development"
-	params = fmt.Sprintf("dbname=%s sslmode=disable", dbname)
+	params = fmt.Sprintf("user=choxi password=password dbname=%s sslmode=disable", dbname)
 	if connection, err = sqlx.Connect("postgres", params); err != nil {
 		log.Fatalln(err)
 	}

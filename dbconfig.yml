@@ -1,6 +1,6 @@
 development:
     dialect: postgres
-    datasource: dbname=dre_development sslmode=disable
+    datasource: user=choxi password=password dbname=dre_development sslmode=disable
     dir: migrations/
     table: migrations
 

@@ -6,22 +6,22 @@
 
         <script>
             document.addEventListener("DOMContentLoaded", function() {
-                containerID = "69e66fa4-bc6c-4f1a-a523-c882d8cc3738"
+                containerID = "b6939687-7c58-4ebd-8b81-e2ccbd1e66cc"
                 window.pty = new WebSocket(`ws://localhost:3000/v1/pty?container_id=${containerID}`)
                 window.send = function(command) {
                     pty.send(btoa(command))
                 }
 
-                pty.onopen = function() { 
-                    console.log("opened") 
+                pty.onopen = function() {
+                    console.log("opened")
                     pty.onclose = function() { console.log("closed") }
                     let term = newTerminal(pty)
 
-                    pty.onmessage = function(message) { 
+                    pty.onmessage = function(message) {
                         term.write(atob(message.data))
                     }
                 }
-                
+
                 // wait for the socket to open before starting the terminal
                 // or there will be ordering issues :/
                 function newTerminal(sock) {
@@ -34,7 +34,7 @@
 
                     term.open(document.getElementById("bash"))
 
-                    term.on('title', function(title) { 
+                    term.on('title', function(title) {
                         document.title = title
                     })
 

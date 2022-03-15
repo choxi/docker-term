@@ -7,9 +7,21 @@
 
 ## Dev
 
+
+```
+```
+
 #### Server
 
 ```
+$ docker run --rm --name pg -e POSTGRES_USER=choxi -e POSTGRES_PASSWORD=password -p 5432:5432 postgres
+$ docker exec -it pg psql -U choxi
+> CREATE DATABASE dre_development;
+CREATE DATABASE
+> exit
+$ exit
+$ sql-migrate up
+4 migrations applied
 $ go run main.go
 ```
 
