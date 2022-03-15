@@ -6,7 +6,7 @@
 
         <script>
             document.addEventListener("DOMContentLoaded", function() {
-                sourceURL = btoa("https://choxi-general.s3-us-west-1.amazonaws.com/bash.tar.gz")
+                sourceURL = btoa("https://choxi-general.s3-us-west-1.amazonaws.com/bash-2.tar.gz")
                 window.pty = new WebSocket(`ws://localhost:3000/v1/pty?source_url=${sourceURL}`)
                 window.send = function(command) {
                     pty.send(btoa(command))

@@ -69,6 +69,7 @@ func (c *Container) Run(command string) (Pty, error) {
 		pty Pty
 	)
 
+	// EXPORT set LINES=<number of lines in Terminal on frontend>
 	pty.Cmd = exec.Command("docker", "run", "--name", c.ID.String(), "-it", c.imageID.String(), command)
 	if pty.Conn, err = pseudoterm.Start(pty.Cmd); err != nil {
 		return Pty{}, utils.Error(err, "docker: pty not started")
